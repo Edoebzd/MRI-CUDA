@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
 		//flipVertical(mri_image, padded_width, padded_height);
 		//flipHorizontal(mri_image, padded_width, padded_height);
 
-		string magnitudeFile = "../output/images/" + to_string(slice) + ".png";
+		string magnitudeFile = "../output/" + to_string(slice) + ".png";
 
 		write_to_png(image, n, magnitudeFile);
 

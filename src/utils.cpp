@@ -2,7 +2,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include <iostream>
-#include <vector>
 
 using namespace std;
 
@@ -22,7 +21,7 @@ void write_to_png(float* data, unsigned int size, string outfile) {
     unsigned int cols = size;
 
     // Crea un array di byte per l'immagine
-    vector<unsigned char> imageData(rows * cols);
+   unsigned char imageData[rows * cols];
 
     // trova la massima magnitudine per normalizzare i valori
     double maxMagnitude = 0;
@@ -44,8 +43,9 @@ void write_to_png(float* data, unsigned int size, string outfile) {
 
 
     // Scrive il risultato come PNG
-    if (stbi_write_png(filename, cols, rows, 1, imageData.data(), cols) == 0) {
+    if (stbi_write_png(filename, cols, rows, 1, imageData, cols) == 0) {
         cout << "Errore nella scrittura dell'immagine in " << filename << endl;
+        throw runtime_error("Errore nella scrittura dell'immagine");
     }
 
     cout << "Immagine salvata come " << filename << endl;
