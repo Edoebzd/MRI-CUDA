@@ -1,0 +1,1 @@
+./build/MRI-CUDA "$1"

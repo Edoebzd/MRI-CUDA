@@ -1,0 +1,7 @@
+/.idea/
+
+/ismrmrd/
+/output/
+/build/
+/cmake-build-debug/
+/mridata/
