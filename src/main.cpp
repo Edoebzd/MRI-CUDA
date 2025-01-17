@@ -59,10 +59,14 @@ int main(int argc, char** argv) {
 	unsigned int padding = (n - width) / 2;
 	unsigned int vpadding = padding*n;
 
-	float dataR[num_channels][n*n];
-	float dataI[num_channels][n*n];
-	memset(dataR, 0, num_channels * n * n * sizeof(float));
-	memset(dataI, 0, num_channels * n * n * sizeof(float));
+	float** dataR = (float**)malloc(num_channels * sizeof(float*));
+	float** dataI = (float**)malloc(num_channels * sizeof(float*));
+	for (int i = 0; i < num_channels; ++i) {
+		dataR[i] = (float*)malloc(n * n * sizeof(float));
+		dataI[i] = (float*)malloc(n * n * sizeof(float));
+		memset(dataR[i], 0, n*n*sizeof(float));
+		memset(dataI[i], 0, n*n*sizeof(float));
+	}
 
 	//load data
 	complex_float_t tmp;
@@ -130,9 +134,16 @@ int main(int argc, char** argv) {
 
 		string magnitudeFile = "../output/" + to_string(slice) + ".png";
 
-		write_to_png(image, n, magnitudeFile);
+		// write_to_png(image, n, magnitudeFile);
 
 	} // end for slice
+
+	for (int i = 0; i < num_channels; ++i) {
+		free(dataR[i]);
+		free(dataI[i]);
+	}
+	free(dataR);
+	free(dataI);
 
 
     return 0;
