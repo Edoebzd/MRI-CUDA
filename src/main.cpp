@@ -1,31 +1,24 @@
-#include <iostream>
-#include <fstream>
-#include <complex>
-#include <string>
-#include <cmath>
+
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include <vector>
+#include <chrono>
 #include "ismrmrd/ismrmrd.h"
 #include "ismrmrd/dataset.h"
+#include "ismrmrd/serialization.h"
 #include "ismrmrd/xml.h"
-#include "fft/fft-cuda.cuh"
 #include "utils.h"
+#include "fft-cuda.cuh"
 
 using namespace std;
 
-int main(int argc, char** argv) {
+int main(int argc, char* argv[]) {
 
-	if(argc != 2) {
-		cout << "Incorrect invocation, argument must be <dataFile>" << endl;
-		return -1;
-	}
-    cout << "Lettura del file "<< argv[1] <<" ... " << endl;
+    cout << "Lettura del file..." << endl;
 
     string datafile = argv[1];
 
     ISMRMRD::Dataset d(datafile.c_str(), "dataset", false);
-    string xml;
-    d.readHeader(xml);
-    ISMRMRD::IsmrmrdHeader hdr;
-    //ISMRMRD::deserialize(xml.c_str(), hdr);
 
     unsigned int num_acquisitions = d.getNumberOfAcquisitions();
     cout << "Number of acquisitions: " << num_acquisitions << endl;
@@ -43,107 +36,86 @@ int main(int argc, char** argv) {
     cout << "Number of channels: " << num_channels << endl;
     cout << "Number of samples: " << num_samples << endl;
     cout << "Number of slices: " << num_slices << endl;
-	cout << "width: " << width << endl;
-	cout << "height: " << height << endl;
+
+    cout << "width: " << width << endl;
+    cout << "height: " << height << endl;
 
     // 3D array to store the multi channel slice data
     // num_channels x width x height
+    vector<vector<vector<complex<float>>>> slice_channels(num_channels,
+        vector<vector<complex<float>>>(width,
+            vector<complex<float>>(height, { 0.0f, 0.0f })));
 
-	unsigned int padded_width = next_power_of_two(width);
-	unsigned int padded_height = next_power_of_two(height);
-	if (padded_height != padded_width) {
-		cout << "Error: the width and height must be equal" << endl;
-		return 1;
-	}
-	unsigned int n = padded_width;
-	unsigned int padding = (n - width) / 2;
-	unsigned int vpadding = padding*n;
+    // padded array to perform FFT
+    unsigned int padded_width = next_power_of_two(width);
+    unsigned int padded_height = next_power_of_two(height);
 
-	float** dataR = (float**)malloc(num_channels * sizeof(float*));
-	float** dataI = (float**)malloc(num_channels * sizeof(float*));
-	for (int i = 0; i < num_channels; ++i) {
-		dataR[i] = (float*)malloc(n * n * sizeof(float));
-		dataI[i] = (float*)malloc(n * n * sizeof(float));
-		memset(dataR[i], 0, n*n*sizeof(float));
-		memset(dataI[i], 0, n*n*sizeof(float));
-	}
+    vector<vector<vector<complex<float>>>> slice_channels_padded(num_channels,
+        vector<vector<complex<float>>>(padded_width,
+            vector<complex<float>>(padded_height, { 0.0f, 0.0f })));
 
-	//load data
-	complex_float_t tmp;
-	for (unsigned int slice = 0; slice < num_slices; slice++) {
+    cout << "Processing data..." << endl;
+    // Read the data from the acquisitions
 
-		for(unsigned int j = 0; j < num_samples; j++) {
-			d.readAcquisition(slice*num_samples + j, acq);
-			for (unsigned int channel = 0; channel < num_channels; channel++) {
-				for (unsigned int sample = 0; sample < num_samples; sample++) {
-					tmp = acq.data(sample, channel);
-					dataR[channel][vpadding + j*n + padding + sample] = tmp.real();
-					dataI[channel][vpadding + j*n + padding + sample] = tmp.imag();
-				}
-			}
-		}
+    
 
-		cout << "Processing data..." << endl;
+    //num_slices = 10; // for testing purposes
+    for (unsigned int slice = 0; slice < num_slices; slice++) {
 
-        // ---------------------------------- OPTIONAL --------------------------------------------
-		// comment to speed up the process
-		// write the k-space data to a PNG file (only the magnitude of the first channel)
+        // Read the data for the current slice
+        for (unsigned int j = 0; j < num_samples; j++) {
+            d.readAcquisition(slice * num_samples + j, acq);
+            for (unsigned int channel = 0; channel < num_channels; channel++) {
+                for (unsigned int i = 0; i < num_samples; i++) {
+                    slice_channels[channel][j][i] = acq.data(i, channel);
+                }
+            }
+        }
 
-  //      string kspaceFile = "C:/Users/user/source/repos/FFT/output/kspace/" + to_string(slice) + ".png";
-  //      vector<vector<double>> k_space_image(padded_width, vector<double>(padded_height, 0.0));
-		//combineCoils(slice_channels_padded, k_space_image, padded_width, padded_height, num_channels);
-		//apply_scale(k_space_image);
-  //      write_to_png(k_space_image, kspaceFile);
 
-        // -----------------------------------------------------------------------------------------
+        for (unsigned int channel = 0; channel < num_channels; channel++) {
+            slice_channels_padded[channel] = pad_vector(slice_channels[channel]);
+        }
 
 
         // 2D IFFT
-		for (unsigned int channel = 0; channel < num_channels; channel++) {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (unsigned int channel = 0; channel < num_channels; channel++) {
 
-			FFT2D_GPU(dataR[channel], dataI[channel], n, 1.0);
-			//FFT_SHIFT(slice_channels_padded[channel], padded_width, padded_height);
-		}
+            // TODO rimuovere la costante 512
+            complex<float>** data = new complex<float>*[512];
 
-		// final vector to store the image
-		float image[n*n];
+            for (size_t i = 0; i < 512; ++i) {
+                data[i] = slice_channels_padded[channel][i].data();
+            }
 
-		// combine the channels
-		float sumOfSquares, magnitude;
-		for (int i = 0; i < n; i++) {
-			for (int j = 0; j < n; j++) {
+			FFT2D_GPU(data, 512, 1);
 
-				sumOfSquares = 0.0;
-				for (int k = 0; k < num_channels; k++) {
-					magnitude = sqrt(dataR[k][i*n + j] * dataR[k][i*n + j] + dataI[k][i*n + j] * dataI[k][i*n + j]);
-					sumOfSquares += magnitude * magnitude;
-				}
-				image[i*n +j] = sqrt(sumOfSquares);
-			}
-		}
+            //FFT_SHIFT(slice_channels_padded[channel], padded_width, padded_height);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << "Tempo impiegato: " << duration_ms.count() << " millisecondi" << std::endl;
 
 
+        // final vector to store the image
+        vector<vector<float>> mri_image(padded_width, vector<float>(padded_height, 0.0));
+
+        // combine the coils
+        combineCoils(slice_channels_padded, mri_image, padded_width, padded_height, num_channels);
 
 
-		// rotate the image by 90 degrees
-		//rotate_90_degrees(mri_image);
+        // rotate the image by 90 degrees
+        rotate_90_degrees(mri_image);
 
-		// flip
-		//flipVertical(mri_image, padded_width, padded_height);
-		//flipHorizontal(mri_image, padded_width, padded_height);
+        // flip 
+        //flipVertical(mri_image, padded_width, padded_height);
+        //flipHorizontal(mri_image, padded_width, padded_height);
 
-		string magnitudeFile = "../output/" + to_string(slice) + ".png";
+        string magnitudeFile = argv[2] + to_string(slice) + ".png";
 
-		// write_to_png(image, n, magnitudeFile);
-
-	} // end for slice
-
-	for (int i = 0; i < num_channels; ++i) {
-		free(dataR[i]);
-		free(dataI[i]);
-	}
-	free(dataR);
-	free(dataI);
+        write_to_png(mri_image, magnitudeFile);
+    } // end for slice
 
 
     return 0;
