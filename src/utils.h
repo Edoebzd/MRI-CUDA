@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-
+#include <iostream>
 using namespace std;
 
 int next_power_of_two(int N);
