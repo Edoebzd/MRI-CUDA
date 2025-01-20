@@ -1,1 +1,1 @@
-./build/MRI-CUDA "$1"
+./build/MRI-CUDA "$1" "$2"

@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
     cout << "Number of slices: " << num_slices << endl;
 
     // padded array to perform FFT
-    unsigned int size = next_power_of_two(size);
+    unsigned int size = next_power_of_two(num_samples);
 
     cout << "Processing data..." << endl;
     // Read the data from the acquisitions
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         //flipVertical(mri_image, padded_width, padded_height);
         //flipHorizontal(mri_image, padded_width, padded_height);
 
-        string magnitudeFile = "argv[2]" + to_string(slice) + ".png";
+        string magnitudeFile = argv[2] + to_string(slice) + ".png";
 
         write_to_png(mri_image, magnitudeFile);
     } // end for slice

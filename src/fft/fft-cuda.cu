@@ -1,4 +1,4 @@
-#include "fft-v2-cuda.cuh"
+#include "fft-cuda.cuh"
 #include <thrust/complex.h>
 #include <complex>
 #include <math.h>

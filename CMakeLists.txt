@@ -8,7 +8,7 @@ include_directories(src)
 include_directories(src/fft)
 
 add_executable(${PROJECT_NAME}
-        src/main.cpp
+        src/main.cu
         src/utils.cpp
         src/utils.h
         src/stb_image_write.h
