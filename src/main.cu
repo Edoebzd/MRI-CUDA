@@ -24,16 +24,16 @@ __global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int
     extern __shared__ thrust::complex<float> temp[];
 
     //row fft
-    FFT1D(dir, data + ((blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (threadIdx.x * size), sizelog2);
+    FFT1D(dir, data + ((blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (threadIdx.x * size)), sizelog2);
     for(int i = 0; i < size; i++) {
-        temp[i * size + threadIdx.x] = data[threadIdx.x * size + i];
+        temp[i * size + threadIdx.x] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
     }
     __syncthreads();
 
     //col fft
     FFT1D(dir, temp + (threadIdx.x * size), sizelog2);
     for(int i = 0; i < size; i++) {
-        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (i * size + threadIdx.x)] = temp[threadIdx.x * size + i];
+        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (i * size + threadIdx.x)] = temp[threadIdx.x * size + i];
     }
     __syncthreads();
 
@@ -41,15 +41,15 @@ __global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int
     int size2 = size / 2;
     //row shift
     for (int i = 0; i < size2; i++) {
-        temp[threadIdx.x*size + i + size2] = data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
-        temp[threadIdx.x * size + i] = data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i + size2];
+        temp[threadIdx.x*size + i + size2] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
+        temp[threadIdx.x * size + i] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i + size2];
     }
     __syncthreads();
 
     //col shift
     for (int i = 0; i < size2; i++) {
-        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = temp[(i + size2) * size + threadIdx.x];
-        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x] = temp[i * size + threadIdx.x];
+        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = temp[(i + size2) * size + threadIdx.x];
+        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x] = temp[i * size + threadIdx.x];
     }
 }
 
@@ -116,11 +116,19 @@ int main(int argc, char* argv[]) {
     dim3 grid(num_channels, num_slices);
     dim3 block(size);
 
+    cout << "Computing ..." << endl;
+    auto start = std::chrono::high_resolution_clock::now();
+
     kernel<<<grid, block, size * size * sizeof(thrust::complex<float>)>>>(data_gpu, size, sizelog2, 1);
     cudaDeviceSynchronize();
 
     cudaMemcpy(data, data_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>), cudaMemcpyDeviceToHost);
     cudaFree(data_gpu);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Tempo impiegato: " << duration_ms.count() << " millisecondi" << std::endl;
+    cout << "Saving images..." << endl;
 
     for (int slice = 0; slice < num_slices; slice++) {
         /*

@@ -39,29 +39,6 @@ void write_to_png(vector<vector<float>> data, string outfile) {
 
     cout << "Immagine salvata come " << filename << endl;
 }
-
-// Funzione per combinare i risultati dei coil in una singola immagine con RSS (Root Sum of Squares)
-void combineCoils(const vector<vector<vector<complex<float>>>>& coils,
-    vector<vector<float>>& image,
-    int rows, int cols, int numCoils) {
-    // coils � un vettore 3D: [coil][row][col]
-    // image � l'immagine combinata in output
-
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            float sumSquares = 0.0;
-            for (int k = 0; k < numCoils; ++k) {
-                // Magnitudine del valore complesso per il coil k
-                float magnitude = abs(coils[k][i][j]);
-                sumSquares += magnitude * magnitude;
-            }
-            // Calcola il risultato RSS
-            image[i][j] = sqrt(sumSquares);
-        }
-    }
-}
-
-
 int next_power_of_two(int N) {
     if (N <= 1) return 1; // Edge case for numbers <= 1
     int power = 1;
@@ -69,44 +46,4 @@ int next_power_of_two(int N) {
         power <<= 1; // Equivalent to power = power * 2;
     }
     return power;
-}
-
-void rotate_90_degrees(vector<vector<float>>& data) {
-    int n = data.size();
-    for (int i = 0; i < n / 2; i++) {
-        for (int j = i; j < n - i - 1; j++) {
-            float temp = data[i][j];
-            data[i][j] = data[n - j - 1][i];
-            data[n - j - 1][i] = data[n - i - 1][n - j - 1];
-            data[n - i - 1][n - j - 1] = data[j][n - i - 1];
-            data[j][n - i - 1] = temp;
-        }
-    }
-}
-
-// Funzione per applicare la scala logaritmica ai valori di magnitudine
-void apply_scale(std::vector<std::vector<float>>& magnitudes) {
-    for (auto& row : magnitudes) {
-        for (auto& value : row) {
-            value = sqrt(1 + value); // Applica la scala logaritmica
-        }
-    }
-}
-
-void flipVertical(std::vector<std::vector<float>>& image, int rows, int cols) {
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols / 2; ++j) {
-            // Swap pixels across the vertical axis
-            std::swap(image[i][j], image[i][cols - j - 1]);
-        }
-    }
-}
-
-void flipHorizontal(std::vector<std::vector<float>>& image, int rows, int cols) {
-	for (int i = 0; i < rows / 2; ++i) {
-		for (int j = 0; j < cols; ++j) {
-			// Swap pixels across the horizontal axis
-			std::swap(image[i][j], image[rows - i - 1][j]);
-		}
-	}
 }
