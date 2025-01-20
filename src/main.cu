@@ -17,6 +17,42 @@
 
 using namespace std;
 
+__global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int dir) {
+    int img = blockIdx.x;
+    int ch = blockIdx.y;
+
+    extern __shared__ thrust::complex<float> temp[];
+
+    //row fft
+    FFT1D(dir, data + ((blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (threadIdx.x * size), sizelog2);
+    for(int i = 0; i < size; i++) {
+        temp[i * size + threadIdx.x] = data[threadIdx.x * size + i];
+    }
+    __syncthreads();
+
+    //col fft
+    FFT1D(dir, temp + (threadIdx.x * size), sizelog2);
+    for(int i = 0; i < size; i++) {
+        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (i * size + threadIdx.x)] = temp[threadIdx.x * size + i];
+    }
+    __syncthreads();
+
+    //shift
+    int size2 = size / 2;
+    //row shift
+    for (int i = 0; i < size2; i++) {
+        temp[threadIdx.x*size + i + size2] = data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
+        temp[threadIdx.x * size + i] = data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i + size2];
+    }
+    __syncthreads();
+
+    //col shift
+    for (int i = 0; i < size2; i++) {
+        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = temp[(i + size2) * size + threadIdx.x];
+        data[(blockIdx.y * BlockDim.x + size + size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x] = temp[i * size + threadIdx.x];
+    }
+}
+
 int main(int argc, char* argv[]) {
 
     cout << "Lettura del file..." << endl;
@@ -42,8 +78,9 @@ int main(int argc, char* argv[]) {
 
     // padded array to perform FFT
     unsigned int size = next_power_of_two(num_samples);
+    int sizelog2 = log2(size);
 
-    cout << "Processing data..." << endl;
+    cout << "Loading data..." << endl;
     // Read the data from the acquisitions
 
     thrust::complex<float>* data;
@@ -70,11 +107,27 @@ int main(int argc, char* argv[]) {
 
     }
 
-    for (int slice = 0; slice < num_slices; slice++) {
+    //load to gpu
+    thrust::complex<float>* data_gpu;
+    cudaMalloc((void**)&data_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>));
+    cudaMemcpy(data_gpu, data, num_slices * num_channels * size * size * sizeof(thrust::complex<float>), cudaMemcpyHostToDevice);
 
+    //gpu grid
+    dim3 grid(num_channels, num_slices);
+    dim3 block(size);
+
+    kernel<<<grid, block, size * size * sizeof(thrust::complex<float>)>>>(data_gpu, size, sizelog2, 1);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(data, data_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>), cudaMemcpyDeviceToHost);
+    cudaFree(data_gpu);
+
+    for (int slice = 0; slice < num_slices; slice++) {
+        /*
         // 2D IFFT
         auto start = std::chrono::high_resolution_clock::now();
         for (int channel = 0; channel < num_channels; channel++) {
+
 
 			FFT2D_GPU( data + index(slice, channel, 0, 0, size, num_channels), 512, 1);
 
@@ -83,7 +136,7 @@ int main(int argc, char* argv[]) {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         std::cout << "Tempo impiegato: " << duration_ms.count() << " millisecondi" << std::endl;
-
+        */
 
         // final vector to store the image
         vector<vector<float>> mri_image(size, vector<float>(size, 0.0));
