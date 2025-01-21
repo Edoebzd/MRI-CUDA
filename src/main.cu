@@ -17,23 +17,22 @@
 
 using namespace std;
 
-__global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int dir) {
-    int img = blockIdx.x;
-    int ch = blockIdx.y;
 
-    extern __shared__ thrust::complex<float> temp[];
+
+__global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int dir, thrust::complex<float>* temp) {
+    //extern __shared__ thrust::complex<float> temp[];
 
     //row fft
-    FFT1D(dir, data + ((blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (threadIdx.x * size)), sizelog2);
+    FFT1D(dir, data + ((blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + (threadIdx.x * size)), sizelog2);
     for(int i = 0; i < size; i++) {
-        temp[i * size + threadIdx.x] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
+        temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
     }
     __syncthreads();
 
     //col fft
-    FFT1D(dir, temp + (threadIdx.x * size), sizelog2);
+    FFT1D(dir, temp + (blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + (threadIdx.x * size), sizelog2);
     for(int i = 0; i < size; i++) {
-        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (i * size + threadIdx.x)] = temp[threadIdx.x * size + i];
+        data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + (i * size + threadIdx.x)] = temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
     }
     __syncthreads();
 
@@ -41,15 +40,15 @@ __global__ void kernel(thrust::complex<float>* data, int size, int sizelog2, int
     int size2 = size / 2;
     //row shift
     for (int i = 0; i < size2; i++) {
-        temp[threadIdx.x*size + i + size2] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
-        temp[threadIdx.x * size + i] = data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + threadIdx.x * size + i + size2];
+        temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x*size + i + size2] = data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x * size + i];
+        temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x * size + i] = data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + threadIdx.x * size + i + size2];
     }
     __syncthreads();
 
     //col shift
     for (int i = 0; i < size2; i++) {
-        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = temp[(i + size2) * size + threadIdx.x];
-        data[(blockIdx.y * blockDim.x + size + size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x] = temp[i * size + threadIdx.x];
+        data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + i * size + threadIdx.x] = temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x];
+        data[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + (i + size2) * size + threadIdx.x] = temp[(blockIdx.y * gridDim.x * size * size) + (blockIdx.x * size * size) + i * size + threadIdx.x];
     }
 }
 
@@ -109,7 +108,9 @@ int main(int argc, char* argv[]) {
 
     //load to gpu
     thrust::complex<float>* data_gpu;
+    thrust::complex<float>* temp_gpu;
     cudaMalloc((void**)&data_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>));
+    cudaMalloc((void**)&temp_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>));
     cudaMemcpy(data_gpu, data, num_slices * num_channels * size * size * sizeof(thrust::complex<float>), cudaMemcpyHostToDevice);
 
     //gpu grid
@@ -119,11 +120,12 @@ int main(int argc, char* argv[]) {
     cout << "Computing ..." << endl;
     auto start = std::chrono::high_resolution_clock::now();
 
-    kernel<<<grid, block, size * size * sizeof(thrust::complex<float>)>>>(data_gpu, size, sizelog2, 1);
+    kernel<<<grid, block>>>(data_gpu, size, sizelog2, 1, temp_gpu);
     cudaDeviceSynchronize();
 
     cudaMemcpy(data, data_gpu, num_slices * num_channels * size * size * sizeof(thrust::complex<float>), cudaMemcpyDeviceToHost);
     cudaFree(data_gpu);
+    cudaFree(temp_gpu);
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
