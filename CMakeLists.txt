@@ -5,15 +5,12 @@ set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CXX_STANDARD 14)
 
 include_directories(src)
-include_directories(src/fft)
 
 add_executable(${PROJECT_NAME}
         src/main.cu
         src/utils.cpp
         src/utils.h
         src/stb_image_write.h
-        src/fft/fft-cuda.cu
-        src/fft/fft-cuda.cuh
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

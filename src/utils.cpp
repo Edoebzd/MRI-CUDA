@@ -22,6 +22,7 @@ void write_to_png(vector<vector<float>> data, string outfile) {
         }
     }
 
+
     // Normalizza le magnitudini e converte in byte
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
